@@ -6,21 +6,51 @@ import java.util.List;
 import org.lwjgl.opengl.GL11;
 
 import org.newdawn.slick.Color;
+import org.newdawn.slick.GameContainer;
 import org.newdawn.slick.Graphics;
+import org.newdawn.slick.Image;
 import org.newdawn.slick.geom.Polygon;
 import org.newdawn.slick.geom.Vector2f;
 import org.newdawn.slick.SlickException;
 
 public class Light 
 {
+	// Light Properties -------------------------------------------------------
+	// Position of light
 	private Vector2f position;
-	private float range;
-	private boolean shouldUpdate;
-	private Color tint;
-	private float alpha;
-	private Color sharedColor = new Color(1f, 1f, 1f, 1f);
-	private List<Polygon> shadows = new ArrayList<Polygon>();
 	
+	// Outer radius of light
+	private float outerRadius;
+
+	// Inner radius of light
+	private float innerRadius;
+	
+	// Color of the light
+	private Color tint;
+	
+	// Should the light be recalculated/re-rendered?
+	private boolean shouldUpdate;
+	
+	// Should the light cast shadows?
+	private boolean shouldCastShadows;
+	
+	// Light Objects ----------------------------------------------------------
+	private List<Polygon> shadows = new ArrayList<Polygon>();
+	private Image renderedImage;
+	
+	// Other properties -------------------------------------------------------
+	private static int imageScale = 1; // DEPRECATED
+	
+	// Padding for the image
+	private int padding;
+	
+	// Image's origin in relation to position
+	private float imageX;
+	private float imageY;
+	
+	// Image's midpoint (includes the image scale)
+	private float imageCenterX;
+	private float imageCenterY;
 	
 	public class Shadow
 	{
@@ -52,46 +82,75 @@ public class Light
 		}
 	}
 	
-	public Light (Vector2f position, float range, Color tint, float alpha) throws SlickException
+	public Light (Vector2f position, Color tint, float innerRadius, float outerRadius, boolean shouldCastShadows) throws SlickException
 	{
 		this.position = position;
-		this.range = range;
 		this.tint = tint;
-		this.alpha = alpha;
+		this.outerRadius = outerRadius;
+		this.innerRadius = innerRadius;
+		this.shouldCastShadows = shouldCastShadows;
 		this.shouldUpdate = true;
+		
+		this.imageX = this.position.x - (outerRadius * imageScale);
+		this.imageY = this.position.y - (outerRadius * imageScale);
+		
+		this.imageCenterX = outerRadius * imageScale;
+		this.imageCenterY = outerRadius * imageScale;
+		
+		this.renderedImage = new Image((int)(outerRadius*2)*imageScale, (int)(outerRadius*2)*imageScale);
 	}
 
-	public Vector2f getPosition() {
+	public float getRange()
+	{
+		return outerRadius;
+	}
+	
+	public Vector2f getPosition() 
+	{
 		return position;
 	}
 
-	public void setPosition(Vector2f position) {
+	public void setPosition(Vector2f position) 
+	{
 		this.position = position;
 	}
 
-	public boolean isShouldUpdate() {
+	public boolean isShouldUpdate() 
+	{
 		return shouldUpdate;
 	}
 
-	public void setShouldUpdate(boolean shouldUpdate) {
+	public void setShouldUpdate(boolean shouldUpdate) 
+	{
 		this.shouldUpdate = shouldUpdate;
 	}
 
-	public void renderShadows(Graphics g, List<Block> blocks)
+	public boolean isShouldCastShadows() 
 	{
+		return shouldCastShadows;
+	}
+
+	public void setShouldCastShadows(boolean shouldCastShadows) 
+	{
+		this.shouldCastShadows = shouldCastShadows;
+	}
+
+	public void computeShadows(List<Block> blocks)
+	{
+		imageX = position.x - (outerRadius * imageScale);
+		imageY = position.y - (outerRadius * imageScale);
+		
 		float length;
 		int vertexCount;
 		Vector2f startVert, endVert;
 		
 		shadows.clear();
 		
-		sharedColor.a = alpha;
-		
 		for(Block block : blocks)
 		{
 			// Compute the distance from the block's center (subject to change) to the light's center
 			length = position.distance(new Vector2f(block.getRect().getCenter()));
-			if (length <= range)
+			if (length <= outerRadius)
 			{
     			vertexCount = block.getRect().getPointCount();
     			
@@ -148,6 +207,9 @@ public class Light
 					for(int i = startingIndex; i <= endingIndex; i++)
 					{
 						startVector = new Vector2f(block.getRect().getPoint(i));
+						// set relative pos
+						startVector.x = startVector.x - imageX;
+						startVector.y = startVector.y - imageY; 
 						projectedVector = projectToLightEdge(startVector);
 						
 						shadow.addShadowFin(startVector, projectedVector);
@@ -156,8 +218,10 @@ public class Light
 					for(int i = 0; i < shadowVertexCount; i++)
 					{
 						startVector = new Vector2f(block.getRect().getPoint(currentIndex));
+						// set relative pos
+						startVector.x = startVector.x - imageX;
+						startVector.y = startVector.y - imageY; 
 						projectedVector = projectToLightEdge(startVector);
-					
 						shadow.addShadowFin(startVector, projectedVector);
 						
 						currentIndex = (currentIndex + 1) % vertexCount;
@@ -166,39 +230,6 @@ public class Light
 				shadows.add(shadow.generateGeometry());
 			}
 		}
-		GL11.glEnable(GL11.GL_BLEND);
-		g.setClip((int)(position.x - range), (int)(position.y - range), (int)range*2, (int)range*2);
-
-		GL11.glBlendFunc(GL11.GL_SRC_COLOR, GL11.GL_DST_ALPHA);
-
-		// Draw light gradient
-		int subdivisions = 32;
-		float incr = (float) (2 * Math.PI / subdivisions);
-		
-		GL11.glBegin(GL11.GL_TRIANGLE_FAN);
-			// Inner vertex
-			GL11.glColor4f(tint.r, tint.g, tint.b, alpha);
-			GL11.glVertex2f(position.x, position.y);
-			
-			// Outer vertices
-			GL11.glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
-			for(int i = 0; i <= subdivisions; i++)
-            {
-                  float angle = incr * i;
-
-                  float x = (float) Math.cos(angle) * range + position.x;
-                  float y = (float) Math.sin(angle) * range + position.y;
-
-                  GL11.glVertex2f(x, y);
-            }
-		GL11.glEnd();
-		
-		GL11.glBlendFunc(GL11.GL_SRC_COLOR, GL11.GL_ZERO);
-		g.setColor(Color.transparent);
-		for(Polygon shadowPoly : shadows)
-			g.fill(shadowPoly);
-		
-		g.clearClip();
 	}
 	
 	private boolean doesEdgeCastShadow(Vector2f start, Vector2f end)
@@ -221,16 +252,72 @@ public class Light
     		return false;
     }
 	
+	public void renderToImage(GameContainer container)
+	{
+		Graphics g = container.getGraphics();
+		
+		g.setBackground(Color.transparent);
+		g.clear();
+		///*
+		g.clearAlphaMap();
+		g.setDrawMode(Graphics.MODE_ALPHA_MAP);
+		
+        // Draw light gradient
+ 		drawLight(Color.black, outerRadius);
+
+		g.setColor(Color.transparent);
+		for(Polygon shadowPoly : shadows)
+			g.fill(shadowPoly);
+		//*/
+		g.setDrawMode(Graphics.MODE_ADD_ALPHA);
+		
+		drawLight(tint, outerRadius);
+		drawLight(Color.white, outerRadius*0.2f);
+		
+		g.copyArea(renderedImage, 0, 0);
+
+		g.clear();
+	}
+	
+	public Image getRenderedImage()
+	{
+		return renderedImage;
+	}
+	
+	public void drawLight(Color color, float radius)//, float radius)
+	{
+		int subdivisions = 32;
+ 		float incr = (float) (2 * Math.PI / subdivisions);
+ 		
+		GL11.glBegin(GL11.GL_TRIANGLE_FAN);
+			// Inner vertex
+			GL11.glColor4f(color.r, color.g, color.b, color.a);
+			GL11.glVertex2f(imageCenterX, imageCenterY);
+			
+			// Outer vertices
+			GL11.glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
+			for(int i = 0; i <= subdivisions; i++)
+         {
+               float angle = incr * i;
+
+               float x = (float) Math.cos(angle) * radius + imageCenterX;
+               float y = (float) Math.sin(angle) * radius + imageCenterY;
+
+               GL11.glVertex2f(x, y);
+         }
+		GL11.glEnd();
+	}
+	
 	private Vector2f projectToLightEdge(Vector2f startVector)
 	{
 		// Do some fancy math to get the far vector (the point that sits on the edge of the light's range
-		float dy = startVector.y - position.y;
-		float dx = startVector.x - position.x;
+		float dy = startVector.y - imageCenterX;
+		float dx = startVector.x - imageCenterY;
 		
 		double theta = Math.atan2(dy, dx);
 		
-		float farX = (float)Math.cos(theta) * (range * (float)Math.sqrt(2)) + position.x;
-		float farY = (float)Math.sin(theta) * (range * (float)Math.sqrt(2)) + position.y;
+		float farX = (float)Math.cos(theta) * (outerRadius * (float)Math.sqrt(2)) + imageCenterX;
+		float farY = (float)Math.sin(theta) * (outerRadius * (float)Math.sqrt(2)) + imageCenterY;
 		
 		return new Vector2f(farX, farY);
 	}

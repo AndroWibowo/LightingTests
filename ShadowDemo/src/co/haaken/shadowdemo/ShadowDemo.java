@@ -65,17 +65,26 @@ public class ShadowDemo extends BasicGame
 		{
 			dynamicLight.getPosition().x = gc.getInput().getMouseX();
 			dynamicLight.getPosition().y = gc.getInput().getMouseY();
+			dynamicLight.computeShadows(blocks);
+			dynamicLight.renderToImage(gc);
 		}
+    	
+    	for(Light light : lights)
+    		if(light.isShouldUpdate())
+    		{
+    			light.computeShadows(blocks);
+    			light.renderToImage(gc);
+    		}			
     }
  
     @Override
     public void render(GameContainer gc, Graphics g) throws SlickException 
-    {
-
+    {    		
+    	g.setDrawMode(Graphics.MODE_ADD_ALPHA);
     	// Iterate through each light
     	for(Light light : lights)
     	{
-    		light.renderShadows(g, blocks);
+    		g.drawImage(light.getRenderedImage(), light.getPosition().x - (light.getRenderedImage().getWidth()/2), light.getPosition().y - (light.getRenderedImage().getHeight()/2));
     	}
 
     	g.setDrawMode(Graphics.MODE_NORMAL);
@@ -86,7 +95,8 @@ public class ShadowDemo extends BasicGame
     		g.setColor(Color.white);
     		g.fill(block.getRect());
     	}
-    	
+
+    	g.setDrawMode(Graphics.MODE_NORMAL);
     	g.setColor(Color.white);
         g.drawString("Lights: " + lights.size(), 10, 25);
     }
@@ -97,7 +107,8 @@ public class ShadowDemo extends BasicGame
     	if(lights.size() > 0)
     		lights.get(lights.size() - 1).setShouldUpdate(false);
     	Color newColor = new Color((random.nextFloat() + 0.5f) - 0.5f, (random.nextFloat() + 0.5f) - 0.5f, (random.nextFloat() + 0.5f) - 0.5f, 1.0f);
-        lights.add(new Light(new Vector2f(x, y), 384f, newColor, newColor.a));
+        //lights.add(new Light(new Vector2f(x, y), 600f, newColor, newColor.a));
+    	lights.add(new Light(new Vector2f(x, y), newColor, 64, 384, true));
     }
     
     public void resetLights(GameContainer container) throws SlickException 
@@ -114,7 +125,7 @@ public class ShadowDemo extends BasicGame
     	{
     		// Generate new blocks
         	for(int i = 0; i < 5; i++)
-    			blocks.add(new Block(random.nextInt(container.getWidth()), random.nextInt(container.getHeight()), 50f, 50f));	
+    			blocks.add(new Block(random.nextInt(container.getWidth()), random.nextInt(container.getHeight()), 100f, 50f));	
     	}
     	else
     	{
